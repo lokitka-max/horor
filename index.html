@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Заброшенный дом — 2D</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: monospace; }
+  canvas { display: block; border: 1px solid #222; }
+  #ui { color: #aaa; font-size: 13px; margin-top: 8px; letter-spacing: 1px; }
+  #overlay { position: absolute; display: flex; flex-direction: column; align-items: center; justify-content: center; width: 640px; height: 480px; background: rgba(0,0,0,0.85); color: #ccc; text-align: center; pointer-events: none; }
+  #overlay h1 { font-size: 28px; color: #fff; letter-spacing: 4px; margin-bottom: 16px; text-shadow: 0 0 20px #f00; }
+  #overlay p  { font-size: 14px; line-height: 1.8; color: #999; }
+  #overlay .sub { font-size: 12px; margin-top: 20px; color: #555; animation: blink 1.2s infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+  #wrapper { position: relative; }
+</style>
+</head>
+<body>
+
+<div id="wrapper">
+  <canvas id="c" width="640" height="480"></canvas>
+  <div id="overlay" id="overlay">
+    <h1>ЗАБРОШЕННЫЙ ДОМ</h1>
+    <p>Найди <span style="color:#ff0">3 ключа</span> и выйди через дверь.<br>
+       Прячься в тени — монстр идёт на свет.<br>
+       <span style="color:#f44">Не дай ему тебя поймать.</span></p>
+    <p style="margin-top:14px;font-size:12px;color:#666">WASD / стрелки — движение &nbsp;|&nbsp; мышь — направление фонарика</p>
+    <div class="sub">[ нажми любую клавишу ]</div>
+  </div>
+</div>
+<div id="ui">ключи: 0/3</div>
+
+<script>
+// ─── CONFIG ───────────────────────────────────────────────────────────────────
+const W = 640, H = 480, TS = 32; // tile size
+const COLS = W / TS, ROWS = H / TS; // 20x15 tiles
+
+// Карта: 1=стена, 0=пол, 2=дверь (выход), 3=ключ_тайл (маркер)
+const MAP_SRC = [
+  "11111111111111111111",
+  "10000010000100000001",
+  "10110010010100011101",
+  "10100000010000010001",
+  "10101111010111110001",
+  "10001000000000000001",
+  "11101011111011101011",
+  "10001010000010001001",
+  "10111010111010101001",
+  "10000000100010100001",
+  "10111110100011100101",
+  "10100010000000010101",
+  "10100011111011010101",
+  "10000000000000000021",
+  "11111111111111111111",
+];
+
+const map = MAP_SRC.map(r => r.split('').map(Number));
+
+// Координаты ключей (тайлы)
+const KEY_TILES = [{x:17,y:1},{x:2,y:7},{x:9,y:12}];
+
+// ─── STATE ────────────────────────────────────────────────────────────────────
+let state = "title"; // title | play | dead | win
+let keys_collected = 0;
+let collected = [false, false, false];
+let flashTimer = 0; // экран вспышки при смерти
+
+let player = { x: 1.5*TS, y: 1.5*TS, r: 8, speed: 2.2, angle: 0 };
+let monster = { x: 10.5*TS, y: 7.5*TS, r: 10, speed: 1.0, anger: 0 };
+
+let mouseX = W/2, mouseY = H/2;
+let held = {};
+
+// ─── CANVAS ───────────────────────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const overlay = document.getElementById('overlay');
+const uiEl = document.getElementById('ui');
+
+// ─── INPUT ────────────────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  held[e.key.toLowerCase()] = true;
+  if (state === 'title') startGame();
+  if ((state === 'dead' || state === 'win') && e.key === 'Enter') startGame();
+});
+document.addEventListener('keyup', e => { held[e.key.toLowerCase()] = false; });
+canvas.addEventListener('mousemove', e => {
+  const r = canvas.getBoundingClientRect();
+  mouseX = e.clientX - r.left;
+  mouseY = e.clientY - r.top;
+});
+document.addEventListener('mousemove', e => {
+  const r = canvas.getBoundingClientRect();
+  mouseX = e.clientX - r.left;
+  mouseY = e.clientY - r.top;
+});
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+function startGame() {
+  state = 'play';
+  keys_collected = 0;
+  collected = [false, false, false];
+  player.x = 1.5*TS; player.y = 1.5*TS;
+  monster.x = 10.5*TS; monster.y = 7.5*TS;
+  monster.speed = 1.0; monster.anger = 0;
+  flashTimer = 0;
+  overlay.style.display = 'none';
+}
+
+// ─── COLLISION ────────────────────────────────────────────────────────────────
+function tileAt(wx, wy) {
+  const tx = Math.floor(wx / TS), ty = Math.floor(wy / TS);
+  if (tx < 0 || ty < 0 || tx >= COLS || ty >= ROWS) return 1;
+  return map[ty][tx];
+}
+
+function solidAt(wx, wy) { return tileAt(wx, wy) === 1; }
+
+function moveEntity(ent, dx, dy) {
+  const r = ent.r;
+  // try x
+  if (!solidAt(ent.x + dx + Math.sign(dx)*r, ent.y) &&
+      !solidAt(ent.x + dx + Math.sign(dx)*r, ent.y - r + 1) &&
+      !solidAt(ent.x + dx + Math.sign(dx)*r, ent.y + r - 1)) {
+    ent.x += dx;
+  }
+  // try y
+  if (!solidAt(ent.x, ent.y + dy + Math.sign(dy)*r) &&
+      !solidAt(ent.x - r + 1, ent.y + dy + Math.sign(dy)*r) &&
+      !solidAt(ent.x + r - 1, ent.y + dy + Math.sign(dy)*r)) {
+    ent.y += dy;
+  }
+}
+
+// ─── LINE OF SIGHT (ray to player) ───────────────────────────────────────────
+function hasLOS(ax, ay, bx, by) {
+  const dist = Math.hypot(bx-ax, by-ay);
+  const steps = Math.ceil(dist / (TS * 0.25));
+  for (let i = 1; i < steps; i++) {
+    const t = i / steps;
+    const mx = ax + (bx-ax)*t, my = ay + (by-ay)*t;
+    if (solidAt(mx, my)) return false;
+  }
+  return true;
+}
+
+// ─── FLASHLIGHT POLYGON ───────────────────────────────────────────────────────
+function buildFlashlight(px, py, angle, radius, spread, rays) {
+  const pts = [[px, py]];
+  const half = spread / 2;
+  for (let i = 0; i <= rays; i++) {
+    const a = angle - half + (spread * i / rays);
+    // ray cast to wall
+    let rx = px, ry = py;
+    const dx = Math.cos(a), dy = Math.sin(a);
+    for (let s = 0; s < radius; s += 4) {
+      rx = px + dx * s; ry = py + dy * s;
+      if (solidAt(rx, ry)) { rx = px + dx*(s-4); ry = py + dy*(s-4); break; }
+    }
+    pts.push([rx, ry]);
+  }
+  pts.push([px, py]);
+  return pts;
+}
+
+// Check if point is inside polygon (ray casting)
+function pointInPoly(px, py, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i][0], yi = poly[i][1];
+    const xj = poly[j][0], yj = poly[j][1];
+    if (((yi > py) !== (yj > py)) && (px < (xj-xi)*(py-yi)/(yj-yi)+xi)) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+// ─── UPDATE ───────────────────────────────────────────────────────────────────
+function update() {
+  if (state !== 'play') return;
+
+  // Player movement
+  let dx = 0, dy = 0;
+  if (held['w'] || held['arrowup'])    dy -= 1;
+  if (held['s'] || held['arrowdown'])  dy += 1;
+  if (held['a'] || held['arrowleft'])  dx -= 1;
+  if (held['d'] || held['arrowright']) dx += 1;
+  if (dx && dy) { dx *= 0.707; dy *= 0.707; }
+  moveEntity(player, dx * player.speed, dy * player.speed);
+
+  // Player angle (towards mouse)
+  player.angle = Math.atan2(mouseY - player.y, mouseX - player.x);
+
+  // Pick up keys
+  KEY_TILES.forEach((kt, i) => {
+    if (collected[i]) return;
+    const kx = (kt.x + 0.5) * TS, ky = (kt.y + 0.5) * TS;
+    if (Math.hypot(player.x - kx, player.y - ky) < TS * 0.8) {
+      collected[i] = true;
+      keys_collected++;
+      uiEl.textContent = `ключи: ${keys_collected}/3`;
+    }
+  });
+
+  // Exit check
+  if (keys_collected === 3) {
+    const ex = (17 + 0.5) * TS, ey = (13 + 0.5) * TS;  // door tile
+    // find door tile
+    for (let ty = 0; ty < ROWS; ty++) for (let tx = 0; tx < COLS; tx++) {
+      if (map[ty][tx] === 2) {
+        const dwx = (tx+0.5)*TS, dwy = (ty+0.5)*TS;
+        if (Math.hypot(player.x - dwx, player.y - dwy) < TS) {
+          state = 'win';
+          showEndScreen('win');
+          return;
+        }
+      }
+    }
+  }
+
+  // Flashlight polygon for monster AI
+  const flashPts = buildFlashlight(player.x, player.y, player.angle, 220, Math.PI * 0.45, 24);
+
+  // Monster AI
+  const dist = Math.hypot(player.x - monster.x, player.y - monster.y);
+  const playerLit = pointInPoly(monster.x, monster.y, flashPts);
+  const los = hasLOS(monster.x, monster.y, player.x, player.y);
+
+  // Aggro: increase if player shines light on monster or is close
+  if (playerLit && los) {
+    monster.anger = Math.min(1, monster.anger + 0.04);
+  } else if (dist < 120 && los) {
+    monster.anger = Math.min(1, monster.anger + 0.01);
+  } else {
+    monster.anger = Math.max(0, monster.anger - 0.005);
+  }
+
+  const spd = monster.speed * (1 + monster.anger * 2.5);
+
+  if (monster.anger > 0.1 || dist < 100) {
+    // Chase
+    const ang = Math.atan2(player.y - monster.y, player.x - monster.x);
+    moveEntity(monster, Math.cos(ang) * spd, Math.sin(ang) * spd);
+  } else {
+    // Patrol: random wandering
+    if (!monster._patTimer || --monster._patTimer <= 0) {
+      monster._patAngle = Math.random() * Math.PI * 2;
+      monster._patTimer = 60 + Math.random() * 120;
+    }
+    moveEntity(monster,
+      Math.cos(monster._patAngle) * monster.speed * 0.5,
+      Math.sin(monster._patAngle) * monster.speed * 0.5
+    );
+  }
+
+  // Caught?
+  if (dist < player.r + monster.r + 2) {
+    state = 'dead';
+    flashTimer = 30;
+    showEndScreen('dead');
+  }
+}
+
+// ─── DRAW ─────────────────────────────────────────────────────────────────────
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+
+  if (state === 'title') return;
+
+  // ── Tiles
+  for (let ty = 0; ty < ROWS; ty++) {
+    for (let tx = 0; tx < COLS; tx++) {
+      const t = map[ty][tx];
+      if (t === 1) {
+        ctx.fillStyle = '#1a1a1a';
+        ctx.fillRect(tx*TS, ty*TS, TS, TS);
+        ctx.strokeStyle = '#111';
+        ctx.strokeRect(tx*TS, ty*TS, TS, TS);
+      } else if (t === 2) {
+        // Door
+        ctx.fillStyle = keys_collected >= 3 ? '#4a3' : '#422';
+        ctx.fillRect(tx*TS, ty*TS, TS, TS);
+        ctx.fillStyle = keys_collected >= 3 ? '#8f8' : '#f44';
+        ctx.font = 'bold 18px monospace';
+        ctx.fillText('⬛', tx*TS+8, ty*TS+22);
+      } else {
+        ctx.fillStyle = '#0d0d0d';
+        ctx.fillRect(tx*TS, ty*TS, TS, TS);
+      }
+    }
+  }
+
+  // ── Keys
+  KEY_TILES.forEach((kt, i) => {
+    if (collected[i]) return;
+    const kx = (kt.x + 0.5)*TS, ky = (kt.y + 0.5)*TS;
+    ctx.fillStyle = `hsl(${Date.now()/20 % 360}, 80%, 60%)`;
+    ctx.beginPath();
+    ctx.arc(kx, ky, 6, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = '#ff0';
+    ctx.font = '10px monospace';
+    ctx.fillText('KEY', kx-10, ky-10);
+  });
+
+  // ── Flashlight (light cone)
+  const FLASH_RADIUS = 220;
+  const FLASH_SPREAD = Math.PI * 0.45;
+  const flashPts = buildFlashlight(player.x, player.y, player.angle, FLASH_RADIUS, FLASH_SPREAD, 40);
+
+  // Ambient dim glow around player
+  const ambGrad = ctx.createRadialGradient(player.x, player.y, 0, player.x, player.y, 70);
+  ambGrad.addColorStop(0, 'rgba(255,220,150,0.07)');
+  ambGrad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = ambGrad;
+  ctx.beginPath(); ctx.arc(player.x, player.y, 70, 0, Math.PI*2); ctx.fill();
+
+  // Draw light cone
+  ctx.save();
+  ctx.beginPath();
+  flashPts.forEach(([x,y], i) => i===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y));
+  ctx.closePath();
+  const lightGrad = ctx.createRadialGradient(player.x, player.y, 0, player.x, player.y, FLASH_RADIUS);
+  lightGrad.addColorStop(0, 'rgba(255,230,160,0.55)');
+  lightGrad.addColorStop(0.6, 'rgba(255,200,100,0.2)');
+  lightGrad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = lightGrad;
+  ctx.fill();
+  ctx.restore();
+
+  // ── Darkness overlay (everything outside flashlight is dark)
+  ctx.save();
+  // Full dark rect, then cut out flashlight and ambient
+  ctx.globalCompositeOperation = 'source-over';
+  // Build darkness mask
+  const dkCanvas = document.createElement('canvas');
+  dkCanvas.width = W; dkCanvas.height = H;
+  const dk = dkCanvas.getContext('2d');
+  dk.fillStyle = 'rgba(0,0,0,0.94)';
+  dk.fillRect(0, 0, W, H);
+  // Cut out flashlight
+  dk.globalCompositeOperation = 'destination-out';
+  dk.beginPath();
+  flashPts.forEach(([x,y], i) => i===0 ? dk.moveTo(x,y) : dk.lineTo(x,y));
+  dk.closePath();
+  const dkGrad = dk.createRadialGradient(player.x, player.y, 0, player.x, player.y, FLASH_RADIUS);
+  dkGrad.addColorStop(0, 'rgba(0,0,0,1)');
+  dkGrad.addColorStop(0.85, 'rgba(0,0,0,0.9)');
+  dkGrad.addColorStop(1, 'rgba(0,0,0,0)');
+  dk.fillStyle = dkGrad;
+  dk.fill();
+  // small ambient around player
+  const ambCut = dk.createRadialGradient(player.x, player.y, 0, player.x, player.y, 55);
+  ambCut.addColorStop(0, 'rgba(0,0,0,0.5)');
+  ambCut.addColorStop(1, 'rgba(0,0,0,0)');
+  dk.fillStyle = ambCut;
+  dk.beginPath(); dk.arc(player.x, player.y, 55, 0, Math.PI*2); dk.fill();
+
+  ctx.drawImage(dkCanvas, 0, 0);
+  ctx.restore();
+
+  // ── Monster (only draw if in flashlight or very close)
+  const mInLight = pointInPoly(monster.x, monster.y, flashPts);
+  const mDist = Math.hypot(player.x - monster.x, player.y - monster.y);
+  if (mInLight || mDist < 50) {
+    const alpha = mInLight ? 1 : (50 - mDist) / 50;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    // Body
+    ctx.fillStyle = monster.anger > 0.5 ? '#c00' : '#500';
+    ctx.beginPath();
+    ctx.arc(monster.x, monster.y, monster.r, 0, Math.PI*2);
+    ctx.fill();
+    // Eyes
+    const eyeAng = Math.atan2(player.y - monster.y, player.x - monster.x);
+    ctx.fillStyle = '#f00';
+    for (let s of [-1, 1]) {
+      const ex = monster.x + Math.cos(eyeAng + s*0.4) * 5;
+      const ey = monster.y + Math.sin(eyeAng + s*0.4) * 5;
+      ctx.beginPath(); ctx.arc(ex, ey, 2.5, 0, Math.PI*2); ctx.fill();
+    }
+    // Anger aura
+    if (monster.anger > 0.3) {
+      ctx.strokeStyle = `rgba(255,0,0,${monster.anger * 0.6})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(monster.x, monster.y, monster.r + 6 + monster.anger*8, 0, Math.PI*2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // ── Player
+  ctx.fillStyle = '#7af';
+  ctx.beginPath();
+  ctx.arc(player.x, player.y, player.r, 0, Math.PI*2);
+  ctx.fill();
+  // Direction dot
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(player.x + Math.cos(player.angle)*10, player.y + Math.sin(player.angle)*10, 3, 0, Math.PI*2);
+  ctx.fill();
+
+  // ── Death flash
+  if (flashTimer > 0) {
+    ctx.fillStyle = `rgba(200,0,0,${flashTimer/30 * 0.7})`;
+    ctx.fillRect(0, 0, W, H);
+    flashTimer--;
+  }
+
+  // ── HUD
+  ctx.fillStyle = '#333';
+  ctx.fillRect(8, 8, 130, 20);
+  ctx.fillStyle = '#ff0';
+  ctx.font = '12px monospace';
+  ctx.fillText(`🗝 ${keys_collected}/3   ` + (keys_collected >= 3 ? '→ К ВЫХОДУ!' : ''), 14, 22);
+
+  if (monster.anger > 0.5) {
+    ctx.fillStyle = `rgba(255,0,0,${(monster.anger-0.5)*0.8})`;
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#f44';
+    ctx.font = 'bold 14px monospace';
+    ctx.fillText('ОНО ЧУЕТ ТЕБЯ', W/2 - 65, 30);
+  }
+}
+
+// ─── END SCREEN ───────────────────────────────────────────────────────────────
+function showEndScreen(type) {
+  overlay.style.display = 'flex';
+  overlay.innerHTML = type === 'win'
+    ? `<h1 style="color:#4f4">ТЫ ВЫЖИЛ</h1>
+       <p>Ты выбрался из дома.<br>Позади — тишина.<br><br>
+       <span style="color:#888">Ты оборачиваешься.<br>В окне — что-то движется.</span></p>
+       <div class="sub">[ Enter — играть снова ]</div>`
+    : `<h1>ТЫ МЁРТВ</h1>
+       <p>Оно настигло тебя в темноте.<br><br>
+       <span style="color:#555">Дом снова пуст.</span></p>
+       <div class="sub">[ Enter — попробовать снова ]</div>`;
+}
+
+// ─── LOOP ─────────────────────────────────────────────────────────────────────
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+loop();
+</script>
+</body>
+</html>
