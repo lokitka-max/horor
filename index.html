@@ -113,7 +113,7 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.outputEncoding = THREE.sRGBEncoding;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 0.7;
+renderer.toneMappingExposure = 1.4;
 
 window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -178,7 +178,7 @@ function mkTex(fn, sz=256) {
 }
 
 const wallTex = mkTex((ctx, s) => {
-  ctx.fillStyle = '#16110d';
+  ctx.fillStyle = '#3a2e24';
   ctx.fillRect(0, 0, s, s);
   // bricks
   const bw = s/3, bh = s/7;
@@ -186,18 +186,17 @@ const wallTex = mkTex((ctx, s) => {
     const off = (row % 2) * bw * 0.5;
     for (let col = -1; col < 4; col++) {
       const x = col*bw + off + 1, y = row*bh + 1;
-      const shade = 10 + Math.random()*8;
-      ctx.fillStyle = `hsl(25,${12+Math.random()*8}%,${shade}%)`;
+      const shade = 22 + Math.random()*14;
+      ctx.fillStyle = `hsl(25,${18+Math.random()*10}%,${shade}%)`;
       ctx.fillRect(x, y, bw-2, bh-2);
-      // mortar cracks
-      ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+      ctx.strokeStyle = 'rgba(0,0,0,0.5)';
       ctx.lineWidth = 1;
       ctx.strokeRect(x, y, bw-2, bh-2);
     }
   }
   // dirt/stains
-  for (let i = 0; i < 25; i++) {
-    ctx.fillStyle = `rgba(${Math.random()>0.5?60:0},0,0,${Math.random()*0.2})`;
+  for (let i = 0; i < 15; i++) {
+    ctx.fillStyle = `rgba(${Math.random()>0.5?80:20},0,0,${Math.random()*0.15})`;
     ctx.beginPath();
     ctx.ellipse(Math.random()*s, Math.random()*s, Math.random()*12+2, Math.random()*6+2, Math.random()*Math.PI, 0, Math.PI*2);
     ctx.fill();
@@ -206,11 +205,11 @@ const wallTex = mkTex((ctx, s) => {
 wallTex.repeat.set(0.8, 0.8);
 
 const floorTex = mkTex((ctx, s) => {
-  ctx.fillStyle = '#0b0907';
+  ctx.fillStyle = '#221c15';
   ctx.fillRect(0, 0, s, s);
   const ts = s/4;
   for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) {
-    const shade = 6 + Math.random()*5;
+    const shade = 14 + Math.random()*8;
     ctx.fillStyle = `hsl(28,8%,${shade}%)`;
     ctx.fillRect(i*ts+1, j*ts+1, ts-2, ts-2);
     // crack lines
@@ -232,7 +231,7 @@ const floorTex = mkTex((ctx, s) => {
 floorTex.repeat.set(1, 1);
 
 const ceilTex = mkTex((ctx, s) => {
-  ctx.fillStyle = '#070605';
+  ctx.fillStyle = '#1a1510';
   ctx.fillRect(0, 0, s, s);
   for (let i = 0; i < 60; i++) {
     ctx.fillStyle = `rgba(${10+Math.random()*10},${8+Math.random()*6},${5+Math.random()*5},${Math.random()*0.8})`;
@@ -390,7 +389,7 @@ KEY_SPOTS.forEach((ks, i) => {
   tooth2.position.set(0.04, -0.26, 0);
   g.add(bow, shaft, tooth1, tooth2);
 
-  const kLight = new THREE.PointLight(0xffaa00, 1.2, 2.2);
+  const kLight = new THREE.PointLight(0xffcc44, 2.0, 3.5);
   kLight.position.y = 0;
   g.add(kLight);
 
@@ -425,11 +424,11 @@ debrisPositions.forEach(dp => {
 // ═══════════════════════════════════════════════════
 // LIGHTING
 // ═══════════════════════════════════════════════════
-const ambientLight = new THREE.AmbientLight(0x06050a, 1);
+const ambientLight = new THREE.AmbientLight(0x8877aa, 0.6);
 scene.add(ambientLight);
 
 // Player flashlight
-const flashlight = new THREE.SpotLight(0xfff0cc, 3.5, 14, Math.PI/7, 0.35, 1.8);
+const flashlight = new THREE.SpotLight(0xfff5dd, 6.0, 18, Math.PI/6, 0.3, 1.4);
 flashlight.castShadow = true;
 flashlight.shadow.mapSize.set(512, 512);
 flashlight.shadow.camera.near = 0.1;
@@ -446,10 +445,10 @@ const candleSpots = [{c:5,r:1},{c:14,r:3},{c:1,r:9},{c:18,r:8},{c:10,r:13}];
 const candleLights = [];
 candleSpots.forEach(cs => {
   if (MAP_SRC[cs.r][cs.c] !== '0') return;
-  const pl = new THREE.PointLight(0xff5500, 0.35, 4.5);
+  const pl = new THREE.PointLight(0xff7733, 1.2, 7.0);
   pl.position.set(cs.c*T+T/2, WH-0.25, cs.r*T+T/2);
   scene.add(pl);
-  candleLights.push({ light:pl, base:0.35, phase:Math.random()*6.28 });
+  candleLights.push({ light:pl, base:1.2, phase:Math.random()*6.28 });
 
   // candle geometry
   const candleMat = new THREE.MeshLambertMaterial({ color:0x997744, emissive:0x331100 });
@@ -603,7 +602,7 @@ let heartRate  = 2.0;
 let msgTimer   = 0;
 let ambGroanTimer = 8 + Math.random()*12;
 let flickerTimer = 0;
-let flashIntensity = 3.5;
+let flashIntensity = 6.0;
 
 // ═══════════════════════════════════════════════════
 // CONTROLS
@@ -705,8 +704,8 @@ function loop() {
   if (flickerTimer > 0.04 + Math.random()*0.08) {
     flickerTimer = 0;
     if (flashOn) {
-      flashIntensity = 3.0 + Math.random()*1.2;
-      if (Math.random() < 0.025) flashIntensity = 0.3;
+      flashIntensity = 5.5 + Math.random()*1.5;
+      if (Math.random() < 0.025) flashIntensity = 1.0;
       flashlight.intensity = flashIntensity;
     }
   }
