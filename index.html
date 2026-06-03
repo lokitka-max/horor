@@ -2,41 +2,139 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<title>Заброшенный дом — 2D</title>
+<title>ЗАБРОШЕННЫЙ ДОМ — 3D</title>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: monospace; }
-  canvas { display: block; border: 1px solid #222; }
-  #ui { color: #aaa; font-size: 13px; margin-top: 8px; letter-spacing: 1px; }
-  #overlay { position: absolute; display: flex; flex-direction: column; align-items: center; justify-content: center; width: 640px; height: 480px; background: rgba(0,0,0,0.85); color: #ccc; text-align: center; pointer-events: none; }
-  #overlay h1 { font-size: 28px; color: #fff; letter-spacing: 4px; margin-bottom: 16px; text-shadow: 0 0 20px #f00; }
-  #overlay p  { font-size: 14px; line-height: 1.8; color: #999; }
-  #overlay .sub { font-size: 12px; margin-top: 20px; color: #555; animation: blink 1.2s infinite; }
-  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
-  #wrapper { position: relative; }
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#000; overflow:hidden; font-family:monospace; }
+canvas { display:block; width:100vw; height:100vh; }
+
+#ui { position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; }
+
+#crosshair {
+  position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+}
+#crosshair::before, #crosshair::after {
+  content:''; position:absolute; background:rgba(255,255,255,0.55);
+}
+#crosshair::before { width:2px; height:18px; left:9px; top:0; }
+#crosshair::after  { width:18px; height:2px; left:0; top:8px; }
+
+#hud {
+  position:absolute; bottom:24px; left:24px;
+  color:#bbb; font-size:13px; letter-spacing:1px;
+  text-shadow: 0 0 6px #000, 0 0 12px #000;
+}
+
+#stamina-wrap {
+  position:absolute; bottom:24px; right:24px;
+  width:100px; height:5px; background:#111; border:1px solid #333;
+}
+#stamina-bar { height:100%; background:#3af; width:100%; transition:width 0.08s; }
+
+#msg {
+  position:absolute; top:32%; left:50%; transform:translateX(-50%);
+  color:#ffd700; font-size:16px; letter-spacing:2px;
+  text-shadow:0 0 12px #ffd700, 0 0 24px #aa7700;
+  opacity:0; transition:opacity 0.4s; white-space:nowrap;
+}
+
+#vignette {
+  position:absolute; top:0; left:0; width:100%; height:100%;
+  background: radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.65) 100%);
+}
+
+#danger-overlay {
+  position:absolute; top:0; left:0; width:100%; height:100%;
+  pointer-events:none;
+  box-shadow: inset 0 0 0px rgba(200,0,0,0);
+  transition: box-shadow 0.15s;
+}
+
+#overlay {
+  position:absolute; top:0; left:0; width:100%; height:100%;
+  background:rgba(0,0,0,0.92);
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  color:#ccc; text-align:center; cursor:pointer;
+}
+#overlay h1 {
+  font-size:52px; color:#fff; letter-spacing:10px;
+  text-shadow: 0 0 30px #f00, 0 0 80px #600;
+  margin-bottom:28px;
+}
+#overlay .desc { font-size:14px; line-height:2.2; color:#777; max-width:520px; }
+#overlay .hint { font-size:12px; color:#555; margin-top:8px; line-height:1.8; }
+#overlay .blink { font-size:13px; color:#444; margin-top:28px; animation:blink 1.3s infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.1} }
+
+#look-hint {
+  position:absolute; bottom:60px; left:50%; transform:translateX(-50%);
+  color:#444; font-size:11px; letter-spacing:1px;
+  opacity:1; transition:opacity 1s;
+}
 </style>
 </head>
 <body>
+<canvas id="c"></canvas>
 
-<div id="wrapper">
-  <canvas id="c" width="640" height="480"></canvas>
-  <div id="overlay" id="overlay">
-    <h1>ЗАБРОШЕННЫЙ ДОМ</h1>
-    <p>Найди <span style="color:#ff0">3 ключа</span> и выйди через дверь.<br>
-       Прячься в тени — монстр идёт на свет.<br>
-       <span style="color:#f44">Не дай ему тебя поймать.</span></p>
-    <p style="margin-top:14px;font-size:12px;color:#666">WASD / стрелки — движение &nbsp;|&nbsp; мышь — направление фонарика</p>
-    <div class="sub">[ нажми любую клавишу ]</div>
-  </div>
+<div id="ui">
+  <div id="vignette"></div>
+  <div id="crosshair"></div>
+  <div id="hud">ключи: <span id="keys">0</span>/3</div>
+  <div id="stamina-wrap"><div id="stamina-bar"></div></div>
+  <div id="msg"></div>
+  <div id="danger-overlay"></div>
+  <div id="look-hint">кликни на экран — управление мышью</div>
 </div>
-<div id="ui">ключи: 0/3</div>
 
+<div id="overlay">
+  <h1>ЗАБРОШЕННЫЙ ДОМ</h1>
+  <p class="desc">
+    Найди <span style="color:#ffd700">3 ключа</span> и выйди через дверь выхода.<br>
+    Монстр патрулирует коридоры. Он реагирует на свет фонарика.<br>
+    <span style="color:#f55">Беги. Не смотри на него слишком долго.</span>
+  </p>
+  <p class="hint">
+    WASD — движение &nbsp;|&nbsp; Shift — бег &nbsp;|&nbsp; мышь — взгляд<br>
+    F — фонарик вкл/выкл
+  </p>
+  <div class="blink">[ кликни для начала ]</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
-// ─── CONFIG ───────────────────────────────────────────────────────────────────
-const W = 640, H = 480, TS = 32; // tile size
-const COLS = W / TS, ROWS = H / TS; // 20x15 tiles
+// ═══════════════════════════════════════════════════
+// RENDERER
+// ═══════════════════════════════════════════════════
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.7;
 
-// Карта: 1=стена, 0=пол, 2=дверь (выход), 3=ключ_тайл (маркер)
+window.addEventListener('resize', () => {
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+});
+
+// ═══════════════════════════════════════════════════
+// SCENE / CAMERA
+// ═══════════════════════════════════════════════════
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x000000, 0.075);
+scene.background = new THREE.Color(0x000000);
+
+const camera = new THREE.PerspectiveCamera(80, window.innerWidth/window.innerHeight, 0.05, 60);
+camera.position.set(0, 0.85, 0);
+scene.add(camera);
+
+// ═══════════════════════════════════════════════════
+// MAP
+// ═══════════════════════════════════════════════════
 const MAP_SRC = [
   "11111111111111111111",
   "10000010000100000001",
@@ -54,397 +152,735 @@ const MAP_SRC = [
   "10000000000000000021",
   "11111111111111111111",
 ];
+const ROWS = MAP_SRC.length;
+const COLS = MAP_SRC[0].length;
+const T = 2.2;      // tile world size
+const WH = 2.8;     // wall height
 
-const map = MAP_SRC.map(r => r.split('').map(Number));
+function mapAt(c, r) {
+  if (c < 0 || r < 0 || c >= COLS || r >= ROWS) return '1';
+  return MAP_SRC[r][c];
+}
+function isSolid(wx, wz) {
+  return mapAt(Math.floor(wx/T), Math.floor(wz/T)) === '1';
+}
 
-// Координаты ключей (тайлы)
-const KEY_TILES = [{x:17,y:1},{x:2,y:7},{x:9,y:12}];
+// ═══════════════════════════════════════════════════
+// PROCEDURAL TEXTURES
+// ═══════════════════════════════════════════════════
+function mkTex(fn, sz=256) {
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = sz;
+  fn(cv.getContext('2d'), sz);
+  const t = new THREE.CanvasTexture(cv);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
 
-// ─── STATE ────────────────────────────────────────────────────────────────────
-let state = "title"; // title | play | dead | win
-let keys_collected = 0;
-let collected = [false, false, false];
-let flashTimer = 0; // экран вспышки при смерти
-
-let player = { x: 1.5*TS, y: 1.5*TS, r: 8, speed: 2.2, angle: 0 };
-let monster = { x: 10.5*TS, y: 7.5*TS, r: 10, speed: 1.0, anger: 0 };
-
-let mouseX = W/2, mouseY = H/2;
-let held = {};
-
-// ─── CANVAS ───────────────────────────────────────────────────────────────────
-const canvas = document.getElementById('c');
-const ctx = canvas.getContext('2d');
-const overlay = document.getElementById('overlay');
-const uiEl = document.getElementById('ui');
-
-// ─── INPUT ────────────────────────────────────────────────────────────────────
-document.addEventListener('keydown', e => {
-  held[e.key.toLowerCase()] = true;
-  if (state === 'title') startGame();
-  if ((state === 'dead' || state === 'win') && e.key === 'Enter') startGame();
+const wallTex = mkTex((ctx, s) => {
+  ctx.fillStyle = '#16110d';
+  ctx.fillRect(0, 0, s, s);
+  // bricks
+  const bw = s/3, bh = s/7;
+  for (let row = 0; row < 8; row++) {
+    const off = (row % 2) * bw * 0.5;
+    for (let col = -1; col < 4; col++) {
+      const x = col*bw + off + 1, y = row*bh + 1;
+      const shade = 10 + Math.random()*8;
+      ctx.fillStyle = `hsl(25,${12+Math.random()*8}%,${shade}%)`;
+      ctx.fillRect(x, y, bw-2, bh-2);
+      // mortar cracks
+      ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x, y, bw-2, bh-2);
+    }
+  }
+  // dirt/stains
+  for (let i = 0; i < 25; i++) {
+    ctx.fillStyle = `rgba(${Math.random()>0.5?60:0},0,0,${Math.random()*0.2})`;
+    ctx.beginPath();
+    ctx.ellipse(Math.random()*s, Math.random()*s, Math.random()*12+2, Math.random()*6+2, Math.random()*Math.PI, 0, Math.PI*2);
+    ctx.fill();
+  }
 });
-document.addEventListener('keyup', e => { held[e.key.toLowerCase()] = false; });
-canvas.addEventListener('mousemove', e => {
-  const r = canvas.getBoundingClientRect();
-  mouseX = e.clientX - r.left;
-  mouseY = e.clientY - r.top;
+wallTex.repeat.set(0.8, 0.8);
+
+const floorTex = mkTex((ctx, s) => {
+  ctx.fillStyle = '#0b0907';
+  ctx.fillRect(0, 0, s, s);
+  const ts = s/4;
+  for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) {
+    const shade = 6 + Math.random()*5;
+    ctx.fillStyle = `hsl(28,8%,${shade}%)`;
+    ctx.fillRect(i*ts+1, j*ts+1, ts-2, ts-2);
+    // crack lines
+    if (Math.random() < 0.4) {
+      ctx.strokeStyle = `rgba(0,0,0,${0.3+Math.random()*0.4})`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(i*ts + Math.random()*ts, j*ts + Math.random()*ts);
+      ctx.lineTo(i*ts + Math.random()*ts, j*ts + Math.random()*ts);
+      ctx.stroke();
+    }
+  }
+  // dust/grime
+  for (let i = 0; i < 40; i++) {
+    ctx.fillStyle = `rgba(0,0,0,${Math.random()*0.35})`;
+    ctx.fillRect(Math.random()*s, Math.random()*s, Math.random()*20+1, 1);
+  }
+});
+floorTex.repeat.set(1, 1);
+
+const ceilTex = mkTex((ctx, s) => {
+  ctx.fillStyle = '#070605';
+  ctx.fillRect(0, 0, s, s);
+  for (let i = 0; i < 60; i++) {
+    ctx.fillStyle = `rgba(${10+Math.random()*10},${8+Math.random()*6},${5+Math.random()*5},${Math.random()*0.8})`;
+    ctx.fillRect(Math.random()*s, Math.random()*s, Math.random()*20+2, Math.random()*20+2);
+  }
+  // water stains
+  for (let i = 0; i < 6; i++) {
+    ctx.strokeStyle = `rgba(30,20,10,${0.3+Math.random()*0.3})`;
+    ctx.lineWidth = Math.random()*3+1;
+    ctx.beginPath();
+    const sx = Math.random()*s, sy = Math.random()*s;
+    ctx.moveTo(sx, sy);
+    ctx.lineTo(sx + (Math.random()-0.5)*60, sy + Math.random()*50+10);
+    ctx.stroke();
+  }
+});
+ceilTex.repeat.set(1, 1);
+
+const doorTexNormal = mkTex((ctx, s) => {
+  ctx.fillStyle = '#2a1500';
+  ctx.fillRect(0, 0, s, s);
+  // wood planks
+  for (let i = 0; i < 5; i++) {
+    ctx.fillStyle = `hsl(25,${30+Math.random()*15}%,${9+Math.random()*6}%)`;
+    ctx.fillRect(0, i*s/5+1, s, s/5-2);
+  }
+  ctx.strokeStyle = '#1a0d00';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(4, 4, s-8, s-8);
+});
+
+const doorTexOpen = mkTex((ctx, s) => {
+  ctx.fillStyle = '#0a3300';
+  ctx.fillRect(0, 0, s, s);
+  for (let i = 0; i < 5; i++) {
+    ctx.fillStyle = `hsl(120,${20+Math.random()*15}%,${8+Math.random()*5}%)`;
+    ctx.fillRect(0, i*s/5+1, s, s/5-2);
+  }
+  ctx.strokeStyle = '#053300';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(4, 4, s-8, s-8);
+});
+
+// ═══════════════════════════════════════════════════
+// BUILD WORLD GEOMETRY
+// ═══════════════════════════════════════════════════
+const wallMat  = new THREE.MeshLambertMaterial({ map: wallTex });
+const floorMat = new THREE.MeshLambertMaterial({ map: floorTex });
+const ceilMat  = new THREE.MeshLambertMaterial({ map: ceilTex });
+
+// Big floor / ceiling planes
+const planeGeo = new THREE.PlaneGeometry(COLS*T, ROWS*T);
+floorTex.repeat.set(COLS*0.8, ROWS*0.8);
+ceilTex.repeat.set(COLS*0.8,  ROWS*0.8);
+
+const floorMesh = new THREE.Mesh(planeGeo, floorMat);
+floorMesh.rotation.x = -Math.PI/2;
+floorMesh.position.set(COLS*T/2, 0, ROWS*T/2);
+floorMesh.receiveShadow = true;
+scene.add(floorMesh);
+
+const ceilMesh = new THREE.Mesh(planeGeo.clone(), ceilMat);
+ceilMesh.rotation.x = Math.PI/2;
+ceilMesh.position.set(COLS*T/2, WH, ROWS*T/2);
+scene.add(ceilMesh);
+
+// Walls – merge into one buffer for performance
+const wallPositions = [];
+const wallUVs = [];
+const wallNormals = [];
+const wallIndices = [];
+
+function addWallFace(x1,y1,z1, x2,y2,z2, x3,y3,z3, x4,y4,z4) {
+  const base = wallPositions.length / 3;
+  wallPositions.push(x1,y1,z1, x2,y2,z2, x3,y3,z3, x4,y4,z4);
+  const dx = x2-x1, dz = z2-z1;
+  const len = Math.sqrt(dx*dx+dz*dz);
+  wallUVs.push(0,0, len,0, len,1, 0,1);
+  const nx = dz/len, nz = -dx/len;
+  for (let i=0;i<4;i++) wallNormals.push(nx,0,nz);
+  wallIndices.push(base,base+1,base+2, base,base+2,base+3);
+}
+
+for (let r = 0; r < ROWS; r++) {
+  for (let c = 0; c < COLS; c++) {
+    if (MAP_SRC[r][c] !== '1') continue;
+    const x = c*T, z = r*T;
+    // check each neighbouring floor tile and add a face
+    const dirs = [
+      { dc:0, dr:-1, verts: [[x,0,z],[x+T,0,z],[x+T,WH,z],[x,WH,z]] },
+      { dc:0, dr:+1, verts: [[x+T,0,z+T],[x,0,z+T],[x,WH,z+T],[x+T,WH,z+T]] },
+      { dc:-1,dr:0,  verts: [[x,0,z+T],[x,0,z],[x,WH,z],[x,WH,z+T]] },
+      { dc:+1,dr:0,  verts: [[x+T,0,z],[x+T,0,z+T],[x+T,WH,z+T],[x+T,WH,z]] },
+    ];
+    for (const d of dirs) {
+      if (MAP_SRC[r+d.dr]?.[c+d.dc] !== '1') {
+        const [v0,v1,v2,v3] = d.verts;
+        addWallFace(...v0,...v1,...v2,...v3);
+      }
+    }
+    // top cap
+    const base2 = wallPositions.length/3;
+    wallPositions.push(x,WH,z, x+T,WH,z, x+T,WH,z+T, x,WH,z+T);
+    wallUVs.push(0,0,1,0,1,1,0,1);
+    for(let i=0;i<4;i++) wallNormals.push(0,1,0);
+    wallIndices.push(base2,base2+1,base2+2, base2,base2+2,base2+3);
+  }
+}
+
+const wallGeo = new THREE.BufferGeometry();
+wallGeo.setAttribute('position', new THREE.Float32BufferAttribute(wallPositions, 3));
+wallGeo.setAttribute('normal',   new THREE.Float32BufferAttribute(wallNormals, 3));
+wallGeo.setAttribute('uv',       new THREE.Float32BufferAttribute(wallUVs, 2));
+wallGeo.setIndex(wallIndices);
+wallTex.repeat.set(0.5, 0.5);
+const wallMesh = new THREE.Mesh(wallGeo, wallMat);
+wallMesh.receiveShadow = true;
+scene.add(wallMesh);
+
+// ═══════════════════════════════════════════════════
+// DOOR
+// ═══════════════════════════════════════════════════
+let doorC = -1, doorR = -1, doorMesh;
+for (let r = 0; r < ROWS; r++) {
+  for (let c = 0; c < COLS; c++) {
+    if (MAP_SRC[r][c] === '2') { doorC = c; doorR = r; }
+  }
+}
+const doorMatObj = new THREE.MeshLambertMaterial({ map: doorTexNormal });
+const doorGeo = new THREE.BoxGeometry(T*0.85, WH*0.92, 0.18);
+doorMesh = new THREE.Mesh(doorGeo, doorMatObj);
+doorMesh.position.set(doorC*T + T/2, WH/2, doorR*T + T/2);
+scene.add(doorMesh);
+
+// door glow light
+const doorLight = new THREE.PointLight(0x003300, 0, 3.5);
+doorLight.position.set(doorC*T+T/2, 1.2, doorR*T+T/2);
+scene.add(doorLight);
+
+// ═══════════════════════════════════════════════════
+// KEYS
+// ═══════════════════════════════════════════════════
+const KEY_SPOTS = [{c:17,r:1},{c:2,r:7},{c:9,r:12}];
+const keyObjs = [];
+
+KEY_SPOTS.forEach((ks, i) => {
+  const g = new THREE.Group();
+  const mat = new THREE.MeshLambertMaterial({ color:0xffd700, emissive:0x3a2800 });
+  const bow = new THREE.Mesh(new THREE.TorusGeometry(0.14, 0.045, 10, 20), mat);
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.32, 8), mat);
+  shaft.position.y = -0.22;
+  const tooth1 = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.07, 0.05), mat);
+  tooth1.position.set(0.04, -0.33, 0);
+  const tooth2 = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.07, 0.05), mat);
+  tooth2.position.set(0.04, -0.26, 0);
+  g.add(bow, shaft, tooth1, tooth2);
+
+  const kLight = new THREE.PointLight(0xffaa00, 1.2, 2.2);
+  kLight.position.y = 0;
+  g.add(kLight);
+
+  g.position.set(ks.c*T + T/2, 0.7, ks.r*T + T/2);
+  g.userData = { picked: false };
+  scene.add(g);
+  keyObjs.push(g);
+});
+
+// ═══════════════════════════════════════════════════
+// DEBRIS / PROPS
+// ═══════════════════════════════════════════════════
+const debrisPositions = [
+  {c:3,r:3}, {c:8,r:2}, {c:15,r:4}, {c:5,r:10},
+  {c:12,r:8}, {c:16,r:11}, {c:7,r:13}, {c:11,r:5},
+];
+const debrisMat = new THREE.MeshLambertMaterial({ color:0x1a1008 });
+debrisPositions.forEach(dp => {
+  if (MAP_SRC[dp.r][dp.c] !== '0') return;
+  const kind = Math.floor(Math.random()*3);
+  let geo;
+  if (kind === 0) geo = new THREE.BoxGeometry(0.3+Math.random()*0.3, 0.25+Math.random()*0.4, 0.3+Math.random()*0.3);
+  else if (kind === 1) geo = new THREE.CylinderGeometry(0.15, 0.18, 0.4+Math.random()*0.3, 8);
+  else geo = new THREE.BoxGeometry(0.6, 0.08, 0.4);
+  const m = new THREE.Mesh(geo, debrisMat);
+  m.position.set(dp.c*T + T/2 + (Math.random()-0.5)*0.5, 0.15, dp.r*T + T/2 + (Math.random()-0.5)*0.5);
+  m.rotation.y = Math.random()*Math.PI*2;
+  m.castShadow = true;
+  scene.add(m);
+});
+
+// ═══════════════════════════════════════════════════
+// LIGHTING
+// ═══════════════════════════════════════════════════
+const ambientLight = new THREE.AmbientLight(0x06050a, 1);
+scene.add(ambientLight);
+
+// Player flashlight
+const flashlight = new THREE.SpotLight(0xfff0cc, 3.5, 14, Math.PI/7, 0.35, 1.8);
+flashlight.castShadow = true;
+flashlight.shadow.mapSize.set(512, 512);
+flashlight.shadow.camera.near = 0.1;
+flashlight.shadow.camera.far = 14;
+flashlight.shadow.bias = -0.001;
+const flashTarget = new THREE.Object3D();
+flashTarget.position.set(0, 0, -1);
+camera.add(flashlight);
+camera.add(flashTarget);
+flashlight.target = flashTarget;
+
+// A couple of dim atmospheric wall candles
+const candleSpots = [{c:5,r:1},{c:14,r:3},{c:1,r:9},{c:18,r:8},{c:10,r:13}];
+const candleLights = [];
+candleSpots.forEach(cs => {
+  if (MAP_SRC[cs.r][cs.c] !== '0') return;
+  const pl = new THREE.PointLight(0xff5500, 0.35, 4.5);
+  pl.position.set(cs.c*T+T/2, WH-0.25, cs.r*T+T/2);
+  scene.add(pl);
+  candleLights.push({ light:pl, base:0.35, phase:Math.random()*6.28 });
+
+  // candle geometry
+  const candleMat = new THREE.MeshLambertMaterial({ color:0x997744, emissive:0x331100 });
+  const cm = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.25, 8), candleMat);
+  cm.position.copy(pl.position);
+  cm.position.y = WH - 0.38;
+  scene.add(cm);
+});
+
+// ═══════════════════════════════════════════════════
+// MONSTER
+// ═══════════════════════════════════════════════════
+const monsterRoot = new THREE.Group();
+scene.add(monsterRoot);
+
+function addPart(parent, geo, color, x, y, z, rx=0, ry=0, rz=0) {
+  const m = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color }));
+  m.position.set(x, y, z);
+  m.rotation.set(rx, ry, rz);
+  m.castShadow = true;
+  parent.add(m);
+  return m;
+}
+
+const bodyColor   = 0x0d0808;
+const limbColor   = 0x100a0a;
+const headColor   = 0x0f0909;
+
+// torso
+const torso = addPart(monsterRoot, new THREE.BoxGeometry(0.52, 0.70, 0.26, 2,2,2), bodyColor, 0, 1.45, 0);
+// head
+const head = addPart(monsterRoot, new THREE.BoxGeometry(0.38, 0.38, 0.34, 2,2,2), headColor, 0, 1.98, 0);
+// neck
+addPart(monsterRoot, new THREE.CylinderGeometry(0.08, 0.10, 0.18, 8), limbColor, 0, 1.71, 0);
+// upper arms
+const armLU = addPart(torso, new THREE.BoxGeometry(0.14, 0.38, 0.14), limbColor, -0.33, 0.16, 0);
+const armRU = addPart(torso, new THREE.BoxGeometry(0.14, 0.38, 0.14), limbColor,  0.33, 0.16, 0);
+// forearms
+const armLD = addPart(torso, new THREE.BoxGeometry(0.11, 0.36, 0.11), limbColor, -0.33,-0.2, 0);
+const armRD = addPart(torso, new THREE.BoxGeometry(0.11, 0.36, 0.11), limbColor,  0.33,-0.2, 0);
+// legs
+const legL = addPart(monsterRoot, new THREE.BoxGeometry(0.16, 0.62, 0.16), limbColor, -0.14, 0.72, 0);
+const legR = addPart(monsterRoot, new THREE.BoxGeometry(0.16, 0.62, 0.16), limbColor,  0.14, 0.72, 0);
+// feet
+addPart(monsterRoot, new THREE.BoxGeometry(0.18, 0.10, 0.28), limbColor, -0.14, 0.41, 0.06);
+addPart(monsterRoot, new THREE.BoxGeometry(0.18, 0.10, 0.28), limbColor,  0.14, 0.41, 0.06);
+
+// eyes
+const eyeMat = new THREE.MeshBasicMaterial({ color:0xff0000 });
+const eyeGeo = new THREE.SphereGeometry(0.045, 8, 8);
+const eyeL = new THREE.Mesh(eyeGeo, eyeMat); eyeL.position.set(-0.10, 2.0, -0.17);
+const eyeR = new THREE.Mesh(eyeGeo, eyeMat); eyeR.position.set( 0.10, 2.0, -0.17);
+monsterRoot.add(eyeL, eyeR);
+
+const eyeGlow = new THREE.PointLight(0xff0000, 0, 4);
+eyeGlow.position.set(0, 1.98, -0.2);
+monsterRoot.add(eyeGlow);
+
+// scratch marks on monster
+const scratchMat = new THREE.MeshBasicMaterial({ color:0x330000 });
+for (let i = 0; i < 4; i++) {
+  const sm = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.18+Math.random()*0.1, 0.01), scratchMat);
+  sm.position.set((Math.random()-0.5)*0.3, 1.3+Math.random()*0.4, -0.14);
+  sm.rotation.z = (Math.random()-0.5)*0.4;
+  monsterRoot.add(sm);
+}
+
+// ═══════════════════════════════════════════════════
+// AUDIO (Web Audio API — no external files)
+// ═══════════════════════════════════════════════════
+let actx = null;
+function getACtx() {
+  if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+  return actx;
+}
+
+function playTone(freq, dur, type='sine', vol=0.08, detune=0) {
+  try {
+    const ac = getACtx();
+    const osc = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.connect(gain); gain.connect(ac.destination);
+    osc.type = type; osc.frequency.value = freq; osc.detune.value = detune;
+    gain.gain.setValueAtTime(vol, ac.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + dur);
+    osc.start(); osc.stop(ac.currentTime + dur);
+  } catch(e) {}
+}
+
+function playPickup() {
+  playTone(880, 0.12, 'sine', 0.18);
+  setTimeout(() => playTone(1320, 0.15, 'sine', 0.12), 80);
+}
+
+function playHeartbeat() {
+  try {
+    const ac = getACtx();
+    [0, 0.13].forEach(off => {
+      const osc = ac.createOscillator();
+      const gain = ac.createGain();
+      osc.connect(gain); gain.connect(ac.destination);
+      osc.frequency.value = 52;
+      const t = ac.currentTime + off;
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(0.4, t + 0.04);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+      osc.start(t); osc.stop(t + 0.35);
+    });
+  } catch(e) {}
+}
+
+function playAmbientGroan() {
+  try {
+    const ac = getACtx();
+    const osc = ac.createOscillator();
+    const gain = ac.createGain();
+    const filter = ac.createBiquadFilter();
+    osc.connect(filter); filter.connect(gain); gain.connect(ac.destination);
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(55 + Math.random()*30, ac.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(30 + Math.random()*20, ac.currentTime + 2);
+    filter.type = 'lowpass'; filter.frequency.value = 300;
+    gain.gain.setValueAtTime(0, ac.currentTime);
+    gain.gain.linearRampToValueAtTime(0.06, ac.currentTime + 0.5);
+    gain.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 3);
+    osc.start(); osc.stop(ac.currentTime + 3);
+  } catch(e) {}
+}
+
+// ═══════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════
+let gameState  = 'title';
+let keysCount  = 0;
+let yaw = Math.PI, pitch = 0;
+let stamina = 1.0;
+let flashOn = true;
+
+const monState = {
+  pos: new THREE.Vector3(10*T+T/2, 0, 7*T+T/2),
+  anger: 0,
+  patAngle: 0,
+  patTimer: 80,
+  speed: 2.2,
+  bobTime: 0,
+};
+
+const held = {};
+let heartTimer = 0;
+let heartRate  = 2.0;
+let msgTimer   = 0;
+let ambGroanTimer = 8 + Math.random()*12;
+let flickerTimer = 0;
+let flashIntensity = 3.5;
+
+// ═══════════════════════════════════════════════════
+// CONTROLS
+// ═══════════════════════════════════════════════════
+const overlayEl = document.getElementById('overlay');
+overlayEl.addEventListener('click', () => {
+  if (gameState !== 'play') startGame();
+});
+canvas.addEventListener('click', () => {
+  if (gameState === 'play') canvas.requestPointerLock();
 });
 document.addEventListener('mousemove', e => {
-  const r = canvas.getBoundingClientRect();
-  mouseX = e.clientX - r.left;
-  mouseY = e.clientY - r.top;
+  if (document.pointerLockElement !== canvas || gameState !== 'play') return;
+  yaw   -= e.movementX * 0.0022;
+  pitch -= e.movementY * 0.0022;
+  pitch  = Math.max(-Math.PI*0.38, Math.min(Math.PI*0.38, pitch));
 });
+document.addEventListener('keydown', e => {
+  held[e.code] = true;
+  if (e.code === 'KeyF' && gameState === 'play') { flashOn = !flashOn; flashlight.intensity = flashOn ? flashIntensity : 0; }
+});
+document.addEventListener('keyup',   e => { held[e.code] = false; });
 
-// ─── INIT ─────────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════
+function moveSafe(pos, dx, dz, r) {
+  const nx = pos.x + dx, nz = pos.z + dz;
+  const ex = Math.sign(dx) * r, ez = Math.sign(dz) * r;
+  if (!isSolid(nx+ex, pos.z-r+0.05) && !isSolid(nx+ex, pos.z) && !isSolid(nx+ex, pos.z+r-0.05))
+    pos.x = nx;
+  if (!isSolid(pos.x-r+0.05, nz+ez) && !isSolid(pos.x, nz+ez) && !isSolid(pos.x+r-0.05, nz+ez))
+    pos.z = nz;
+}
+
+function showMsg(text, sec=3) {
+  const el = document.getElementById('msg');
+  el.textContent = text;
+  el.style.opacity = '1';
+  msgTimer = sec * 60;
+}
+
 function startGame() {
-  state = 'play';
-  keys_collected = 0;
-  collected = [false, false, false];
-  player.x = 1.5*TS; player.y = 1.5*TS;
-  monster.x = 10.5*TS; monster.y = 7.5*TS;
-  monster.speed = 1.0; monster.anger = 0;
-  flashTimer = 0;
-  overlay.style.display = 'none';
+  gameState = 'play';
+  keysCount = 0;
+  document.getElementById('keys').textContent = '0';
+  camera.position.set(1.5*T, 0.85, 1.5*T);
+  yaw = Math.PI; pitch = 0;
+  stamina = 1.0;
+  flashOn = true;
+  monState.pos.set(10*T+T/2, 0, 7*T+T/2);
+  monState.anger = 0;
+  monsterRoot.position.copy(monState.pos);
+  keyObjs.forEach(k => { k.userData.picked = false; k.visible = true; });
+  doorMatObj.map = doorTexNormal; doorMatObj.needsUpdate = true;
+  doorLight.intensity = 0;
+  document.getElementById('danger-overlay').style.boxShadow = 'none';
+  document.getElementById('look-hint').style.opacity = '0';
+  overlayEl.style.display = 'none';
+  canvas.requestPointerLock();
 }
 
-// ─── COLLISION ────────────────────────────────────────────────────────────────
-function tileAt(wx, wy) {
-  const tx = Math.floor(wx / TS), ty = Math.floor(wy / TS);
-  if (tx < 0 || ty < 0 || tx >= COLS || ty >= ROWS) return 1;
-  return map[ty][tx];
-}
-
-function solidAt(wx, wy) { return tileAt(wx, wy) === 1; }
-
-function moveEntity(ent, dx, dy) {
-  const r = ent.r;
-  // try x
-  if (!solidAt(ent.x + dx + Math.sign(dx)*r, ent.y) &&
-      !solidAt(ent.x + dx + Math.sign(dx)*r, ent.y - r + 1) &&
-      !solidAt(ent.x + dx + Math.sign(dx)*r, ent.y + r - 1)) {
-    ent.x += dx;
+function endGame(type) {
+  gameState = type;
+  document.exitPointerLock();
+  if (type === 'dead') {
+    overlayEl.innerHTML = `<h1 style="color:#d00">ТЫ МЁРТВ</h1>
+      <p class="desc">Оно настигло тебя в темноте.<br><br>
+      <span style="color:#444">Дом снова пуст.<br>Только капает вода где-то в подвале.</span></p>
+      <div class="blink">[ кликни — попробовать снова ]</div>`;
+  } else {
+    overlayEl.innerHTML = `<h1 style="color:#3d3">ТЫ ВЫЖИЛ</h1>
+      <p class="desc">Ты выбрался из дома. Холодный воздух обжигает лёгкие.<br><br>
+      <span style="color:#666">Ты оборачиваешься.<br>В окне второго этажа что-то движется.</span></p>
+      <div class="blink">[ кликни — играть снова ]</div>`;
   }
-  // try y
-  if (!solidAt(ent.x, ent.y + dy + Math.sign(dy)*r) &&
-      !solidAt(ent.x - r + 1, ent.y + dy + Math.sign(dy)*r) &&
-      !solidAt(ent.x + r - 1, ent.y + dy + Math.sign(dy)*r)) {
-    ent.y += dy;
-  }
+  overlayEl.style.display = 'flex';
 }
 
-// ─── LINE OF SIGHT (ray to player) ───────────────────────────────────────────
-function hasLOS(ax, ay, bx, by) {
-  const dist = Math.hypot(bx-ax, by-ay);
-  const steps = Math.ceil(dist / (TS * 0.25));
-  for (let i = 1; i < steps; i++) {
-    const t = i / steps;
-    const mx = ax + (bx-ax)*t, my = ay + (by-ay)*t;
-    if (solidAt(mx, my)) return false;
-  }
-  return true;
-}
+// ═══════════════════════════════════════════════════
+// GAME LOOP
+// ═══════════════════════════════════════════════════
+let prev = performance.now();
 
-// ─── FLASHLIGHT POLYGON ───────────────────────────────────────────────────────
-function buildFlashlight(px, py, angle, radius, spread, rays) {
-  const pts = [[px, py]];
-  const half = spread / 2;
-  for (let i = 0; i <= rays; i++) {
-    const a = angle - half + (spread * i / rays);
-    // ray cast to wall
-    let rx = px, ry = py;
-    const dx = Math.cos(a), dy = Math.sin(a);
-    for (let s = 0; s < radius; s += 4) {
-      rx = px + dx * s; ry = py + dy * s;
-      if (solidAt(rx, ry)) { rx = px + dx*(s-4); ry = py + dy*(s-4); break; }
-    }
-    pts.push([rx, ry]);
-  }
-  pts.push([px, py]);
-  return pts;
-}
+function loop() {
+  requestAnimationFrame(loop);
+  const now = performance.now();
+  const dt  = Math.min((now - prev) / 1000, 0.05);
+  prev = now;
+  const t   = now * 0.001;
 
-// Check if point is inside polygon (ray casting)
-function pointInPoly(px, py, poly) {
-  let inside = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const xi = poly[i][0], yi = poly[i][1];
-    const xj = poly[j][0], yj = poly[j][1];
-    if (((yi > py) !== (yj > py)) && (px < (xj-xi)*(py-yi)/(yj-yi)+xi)) {
-      inside = !inside;
+  if (gameState !== 'play') {
+    renderer.render(scene, camera);
+    return;
+  }
+
+  // ── Flashlight flicker
+  flickerTimer += dt;
+  if (flickerTimer > 0.04 + Math.random()*0.08) {
+    flickerTimer = 0;
+    if (flashOn) {
+      flashIntensity = 3.0 + Math.random()*1.2;
+      if (Math.random() < 0.025) flashIntensity = 0.3;
+      flashlight.intensity = flashIntensity;
     }
   }
-  return inside;
-}
 
-// ─── UPDATE ───────────────────────────────────────────────────────────────────
-function update() {
-  if (state !== 'play') return;
+  // ── Candle flicker
+  candleLights.forEach(cl => {
+    cl.light.intensity = cl.base + Math.sin(t*4 + cl.phase)*0.08 + Math.random()*0.06;
+  });
 
-  // Player movement
-  let dx = 0, dy = 0;
-  if (held['w'] || held['arrowup'])    dy -= 1;
-  if (held['s'] || held['arrowdown'])  dy += 1;
-  if (held['a'] || held['arrowleft'])  dx -= 1;
-  if (held['d'] || held['arrowright']) dx += 1;
-  if (dx && dy) { dx *= 0.707; dy *= 0.707; }
-  moveEntity(player, dx * player.speed, dy * player.speed);
+  // ── Player movement
+  const running = (held['ShiftLeft'] || held['ShiftRight']);
+  if (running && (held['KeyW']||held['KeyS']||held['KeyA']||held['KeyD'])) {
+    stamina = Math.max(0, stamina - dt*0.28);
+  } else {
+    stamina = Math.min(1, stamina + dt*0.18);
+  }
+  document.getElementById('stamina-bar').style.width = (stamina*100)+'%';
 
-  // Player angle (towards mouse)
-  player.angle = Math.atan2(mouseY - player.y, mouseX - player.x);
+  const spd = (running && stamina > 0) ? 5.5 : 3.2;
+  const fw  = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+  const rt  = new THREE.Vector3( Math.cos(yaw), 0, -Math.sin(yaw));
+  let mx = 0, mz = 0;
+  if (held['KeyW']||held['ArrowUp'])    { mx += fw.x; mz += fw.z; }
+  if (held['KeyS']||held['ArrowDown'])  { mx -= fw.x; mz -= fw.z; }
+  if (held['KeyA']||held['ArrowLeft'])  { mx -= rt.x; mz -= rt.z; }
+  if (held['KeyD']||held['ArrowRight']) { mx += rt.x; mz += rt.z; }
+  const mv = Math.sqrt(mx*mx+mz*mz);
+  if (mv > 0) { mx /= mv; mz /= mv; }
+  moveSafe(camera.position, mx*spd*dt, mz*spd*dt, 0.32);
 
-  // Pick up keys
-  KEY_TILES.forEach((kt, i) => {
-    if (collected[i]) return;
-    const kx = (kt.x + 0.5) * TS, ky = (kt.y + 0.5) * TS;
-    if (Math.hypot(player.x - kx, player.y - ky) < TS * 0.8) {
-      collected[i] = true;
-      keys_collected++;
-      uiEl.textContent = `ключи: ${keys_collected}/3`;
+  // Head bob
+  const bobAmt = (mv > 0) ? (running ? 0.045 : 0.02) : 0;
+  camera.position.y = 0.85 + Math.sin(t*(running?13:8)) * bobAmt;
+
+  // Camera rotation
+  camera.rotation.order = 'YXZ';
+  camera.rotation.y = yaw;
+  camera.rotation.x = pitch;
+
+  // ── Key pickup
+  keyObjs.forEach(k => {
+    if (k.userData.picked) return;
+    k.rotation.y = t * 2.2;
+    k.position.y = 0.7 + Math.sin(t*2.5) * 0.06;
+    if (camera.position.distanceTo(k.position) < 0.9) {
+      k.userData.picked = true;
+      k.visible = false;
+      keysCount++;
+      document.getElementById('keys').textContent = keysCount;
+      playPickup();
+      if (keysCount < 3) {
+        showMsg(`Ключ найден!  (${keysCount}/3)`);
+      } else {
+        showMsg('Все ключи собраны!  Найди выход!', 5);
+        doorMatObj.map = doorTexOpen; doorMatObj.needsUpdate = true;
+        doorLight.intensity = 1.0;
+      }
     }
   });
 
-  // Exit check
-  if (keys_collected === 3) {
-    const ex = (17 + 0.5) * TS, ey = (13 + 0.5) * TS;  // door tile
-    // find door tile
-    for (let ty = 0; ty < ROWS; ty++) for (let tx = 0; tx < COLS; tx++) {
-      if (map[ty][tx] === 2) {
-        const dwx = (tx+0.5)*TS, dwy = (ty+0.5)*TS;
-        if (Math.hypot(player.x - dwx, player.y - dwy) < TS) {
-          state = 'win';
-          showEndScreen('win');
-          return;
-        }
-      }
+  // ── Exit check
+  if (keysCount >= 3 && doorC >= 0) {
+    const dp = new THREE.Vector3(doorC*T+T/2, 0.85, doorR*T+T/2);
+    if (camera.position.distanceTo(dp) < T*0.7) {
+      endGame('win');
+      return;
     }
   }
 
-  // Flashlight polygon for monster AI
-  const flashPts = buildFlashlight(player.x, player.y, player.angle, 220, Math.PI * 0.45, 24);
+  // ── Monster AI
+  const monPos = monState.pos;
+  const pPos   = camera.position;
+  const distMon = monPos.distanceTo(new THREE.Vector3(pPos.x, 0, pPos.z));
 
-  // Monster AI
-  const dist = Math.hypot(player.x - monster.x, player.y - monster.y);
-  const playerLit = pointInPoly(monster.x, monster.y, flashPts);
-  const los = hasLOS(monster.x, monster.y, player.x, player.y);
+  // LOS — check if monster is within flashlight cone
+  const toMon  = new THREE.Vector3(monPos.x - pPos.x, 0, monPos.z - pPos.z).normalize();
+  const camFwd = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+  const inFlash = camFwd.dot(toMon) > 0.55 && distMon < 11 && flashOn;
 
-  // Aggro: increase if player shines light on monster or is close
-  if (playerLit && los) {
-    monster.anger = Math.min(1, monster.anger + 0.04);
-  } else if (dist < 120 && los) {
-    monster.anger = Math.min(1, monster.anger + 0.01);
+  if (inFlash || distMon < 2.5) {
+    monState.anger = Math.min(1, monState.anger + dt * (inFlash ? 0.55 : 0.3));
   } else {
-    monster.anger = Math.max(0, monster.anger - 0.005);
+    monState.anger = Math.max(0, monState.anger - dt * 0.08);
   }
 
-  const spd = monster.speed * (1 + monster.anger * 2.5);
+  // Speeds up as anger grows
+  const effectiveSpd = monState.speed * (1 + monState.anger * 2.8);
 
-  if (monster.anger > 0.1 || dist < 100) {
+  if (monState.anger > 0.12 || distMon < 3.5) {
     // Chase
-    const ang = Math.atan2(player.y - monster.y, player.x - monster.x);
-    moveEntity(monster, Math.cos(ang) * spd, Math.sin(ang) * spd);
+    const dir = new THREE.Vector3(pPos.x - monPos.x, 0, pPos.z - monPos.z).normalize();
+    moveSafe(monPos, dir.x * effectiveSpd * dt, dir.z * effectiveSpd * dt, 0.35);
   } else {
-    // Patrol: random wandering
-    if (!monster._patTimer || --monster._patTimer <= 0) {
-      monster._patAngle = Math.random() * Math.PI * 2;
-      monster._patTimer = 60 + Math.random() * 120;
+    // Patrol
+    monState.patTimer -= dt * 60;
+    if (monState.patTimer <= 0) {
+      monState.patAngle = Math.random() * Math.PI * 2;
+      monState.patTimer = 80 + Math.random()*120;
     }
-    moveEntity(monster,
-      Math.cos(monster._patAngle) * monster.speed * 0.5,
-      Math.sin(monster._patAngle) * monster.speed * 0.5
+    moveSafe(monPos,
+      Math.cos(monState.patAngle) * monState.speed * 0.5 * dt,
+      Math.sin(monState.patAngle) * monState.speed * 0.5 * dt,
+      0.35
     );
   }
 
-  // Caught?
-  if (dist < player.r + monster.r + 2) {
-    state = 'dead';
-    flashTimer = 30;
-    showEndScreen('dead');
+  // Monster animation
+  monState.bobTime += dt * (monState.anger > 0.5 ? 9 : 5);
+  monsterRoot.position.set(monPos.x, Math.sin(monState.bobTime)*0.06, monPos.z);
+
+  // Arms swing
+  armLU.rotation.x = Math.sin(monState.bobTime) * 0.4;
+  armRU.rotation.x = -Math.sin(monState.bobTime) * 0.4;
+  legL.rotation.x  = -Math.sin(monState.bobTime) * 0.35;
+  legR.rotation.x  =  Math.sin(monState.bobTime) * 0.35;
+
+  // Face player
+  monsterRoot.rotation.y = Math.atan2(pPos.x - monPos.x, pPos.z - monPos.z);
+
+  // Lean forward when angry
+  torso.rotation.x = monState.anger * 0.25;
+  head.rotation.x  = -monState.anger * 0.15;
+
+  // Eye glow
+  eyeGlow.intensity = monState.anger * 2.2;
+  const eyeR_val = monState.anger > 0.5 ? 1 : 0.8;
+  const eyeG_val = monState.anger > 0.5 ? 0 : 0.1*(1-monState.anger);
+  eyeMat.color.setRGB(eyeR_val, eyeG_val, 0);
+
+  // Caught
+  if (distMon < 0.65) {
+    endGame('dead');
+    return;
   }
-}
 
-// ─── DRAW ─────────────────────────────────────────────────────────────────────
-function draw() {
-  ctx.clearRect(0, 0, W, H);
+  // ── Door glow pulse
+  if (keysCount >= 3) {
+    doorLight.intensity = 1.0 + Math.sin(t*3)*0.3;
+  }
 
-  if (state === 'title') return;
+  // ── Danger vignette
+  const dangerAlpha = Math.max(0, (monState.anger - 0.25) * 1.35);
+  const dangerEl = document.getElementById('danger-overlay');
+  if (dangerAlpha > 0.05) {
+    dangerEl.style.boxShadow = `inset 0 0 ${60+dangerAlpha*80}px rgba(200,0,0,${dangerAlpha*0.5})`;
+  } else {
+    dangerEl.style.boxShadow = 'none';
+  }
 
-  // ── Tiles
-  for (let ty = 0; ty < ROWS; ty++) {
-    for (let tx = 0; tx < COLS; tx++) {
-      const t = map[ty][tx];
-      if (t === 1) {
-        ctx.fillStyle = '#1a1a1a';
-        ctx.fillRect(tx*TS, ty*TS, TS, TS);
-        ctx.strokeStyle = '#111';
-        ctx.strokeRect(tx*TS, ty*TS, TS, TS);
-      } else if (t === 2) {
-        // Door
-        ctx.fillStyle = keys_collected >= 3 ? '#4a3' : '#422';
-        ctx.fillRect(tx*TS, ty*TS, TS, TS);
-        ctx.fillStyle = keys_collected >= 3 ? '#8f8' : '#f44';
-        ctx.font = 'bold 18px monospace';
-        ctx.fillText('⬛', tx*TS+8, ty*TS+22);
-      } else {
-        ctx.fillStyle = '#0d0d0d';
-        ctx.fillRect(tx*TS, ty*TS, TS, TS);
-      }
+  // ── Heartbeat
+  if (monState.anger > 0.25) {
+    heartRate  = Math.max(0.35, 2.0 - monState.anger * 1.7);
+    heartTimer += dt;
+    if (heartTimer >= heartRate) {
+      heartTimer = 0;
+      playHeartbeat();
     }
+  } else {
+    heartTimer = 0;
   }
 
-  // ── Keys
-  KEY_TILES.forEach((kt, i) => {
-    if (collected[i]) return;
-    const kx = (kt.x + 0.5)*TS, ky = (kt.y + 0.5)*TS;
-    ctx.fillStyle = `hsl(${Date.now()/20 % 360}, 80%, 60%)`;
-    ctx.beginPath();
-    ctx.arc(kx, ky, 6, 0, Math.PI*2);
-    ctx.fill();
-    ctx.fillStyle = '#ff0';
-    ctx.font = '10px monospace';
-    ctx.fillText('KEY', kx-10, ky-10);
-  });
-
-  // ── Flashlight (light cone)
-  const FLASH_RADIUS = 220;
-  const FLASH_SPREAD = Math.PI * 0.45;
-  const flashPts = buildFlashlight(player.x, player.y, player.angle, FLASH_RADIUS, FLASH_SPREAD, 40);
-
-  // Ambient dim glow around player
-  const ambGrad = ctx.createRadialGradient(player.x, player.y, 0, player.x, player.y, 70);
-  ambGrad.addColorStop(0, 'rgba(255,220,150,0.07)');
-  ambGrad.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = ambGrad;
-  ctx.beginPath(); ctx.arc(player.x, player.y, 70, 0, Math.PI*2); ctx.fill();
-
-  // Draw light cone
-  ctx.save();
-  ctx.beginPath();
-  flashPts.forEach(([x,y], i) => i===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y));
-  ctx.closePath();
-  const lightGrad = ctx.createRadialGradient(player.x, player.y, 0, player.x, player.y, FLASH_RADIUS);
-  lightGrad.addColorStop(0, 'rgba(255,230,160,0.55)');
-  lightGrad.addColorStop(0.6, 'rgba(255,200,100,0.2)');
-  lightGrad.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = lightGrad;
-  ctx.fill();
-  ctx.restore();
-
-  // ── Darkness overlay (everything outside flashlight is dark)
-  ctx.save();
-  // Full dark rect, then cut out flashlight and ambient
-  ctx.globalCompositeOperation = 'source-over';
-  // Build darkness mask
-  const dkCanvas = document.createElement('canvas');
-  dkCanvas.width = W; dkCanvas.height = H;
-  const dk = dkCanvas.getContext('2d');
-  dk.fillStyle = 'rgba(0,0,0,0.94)';
-  dk.fillRect(0, 0, W, H);
-  // Cut out flashlight
-  dk.globalCompositeOperation = 'destination-out';
-  dk.beginPath();
-  flashPts.forEach(([x,y], i) => i===0 ? dk.moveTo(x,y) : dk.lineTo(x,y));
-  dk.closePath();
-  const dkGrad = dk.createRadialGradient(player.x, player.y, 0, player.x, player.y, FLASH_RADIUS);
-  dkGrad.addColorStop(0, 'rgba(0,0,0,1)');
-  dkGrad.addColorStop(0.85, 'rgba(0,0,0,0.9)');
-  dkGrad.addColorStop(1, 'rgba(0,0,0,0)');
-  dk.fillStyle = dkGrad;
-  dk.fill();
-  // small ambient around player
-  const ambCut = dk.createRadialGradient(player.x, player.y, 0, player.x, player.y, 55);
-  ambCut.addColorStop(0, 'rgba(0,0,0,0.5)');
-  ambCut.addColorStop(1, 'rgba(0,0,0,0)');
-  dk.fillStyle = ambCut;
-  dk.beginPath(); dk.arc(player.x, player.y, 55, 0, Math.PI*2); dk.fill();
-
-  ctx.drawImage(dkCanvas, 0, 0);
-  ctx.restore();
-
-  // ── Monster (only draw if in flashlight or very close)
-  const mInLight = pointInPoly(monster.x, monster.y, flashPts);
-  const mDist = Math.hypot(player.x - monster.x, player.y - monster.y);
-  if (mInLight || mDist < 50) {
-    const alpha = mInLight ? 1 : (50 - mDist) / 50;
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    // Body
-    ctx.fillStyle = monster.anger > 0.5 ? '#c00' : '#500';
-    ctx.beginPath();
-    ctx.arc(monster.x, monster.y, monster.r, 0, Math.PI*2);
-    ctx.fill();
-    // Eyes
-    const eyeAng = Math.atan2(player.y - monster.y, player.x - monster.x);
-    ctx.fillStyle = '#f00';
-    for (let s of [-1, 1]) {
-      const ex = monster.x + Math.cos(eyeAng + s*0.4) * 5;
-      const ey = monster.y + Math.sin(eyeAng + s*0.4) * 5;
-      ctx.beginPath(); ctx.arc(ex, ey, 2.5, 0, Math.PI*2); ctx.fill();
-    }
-    // Anger aura
-    if (monster.anger > 0.3) {
-      ctx.strokeStyle = `rgba(255,0,0,${monster.anger * 0.6})`;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(monster.x, monster.y, monster.r + 6 + monster.anger*8, 0, Math.PI*2);
-      ctx.stroke();
-    }
-    ctx.restore();
+  // ── Ambient groan
+  ambGroanTimer -= dt;
+  if (ambGroanTimer <= 0) {
+    ambGroanTimer = 10 + Math.random()*20;
+    playAmbientGroan();
   }
 
-  // ── Player
-  ctx.fillStyle = '#7af';
-  ctx.beginPath();
-  ctx.arc(player.x, player.y, player.r, 0, Math.PI*2);
-  ctx.fill();
-  // Direction dot
-  ctx.fillStyle = '#fff';
-  ctx.beginPath();
-  ctx.arc(player.x + Math.cos(player.angle)*10, player.y + Math.sin(player.angle)*10, 3, 0, Math.PI*2);
-  ctx.fill();
-
-  // ── Death flash
-  if (flashTimer > 0) {
-    ctx.fillStyle = `rgba(200,0,0,${flashTimer/30 * 0.7})`;
-    ctx.fillRect(0, 0, W, H);
-    flashTimer--;
+  // ── Message fade
+  if (msgTimer > 0) {
+    if (--msgTimer === 0) document.getElementById('msg').style.opacity = '0';
   }
 
-  // ── HUD
-  ctx.fillStyle = '#333';
-  ctx.fillRect(8, 8, 130, 20);
-  ctx.fillStyle = '#ff0';
-  ctx.font = '12px monospace';
-  ctx.fillText(`🗝 ${keys_collected}/3   ` + (keys_collected >= 3 ? '→ К ВЫХОДУ!' : ''), 14, 22);
-
-  if (monster.anger > 0.5) {
-    ctx.fillStyle = `rgba(255,0,0,${(monster.anger-0.5)*0.8})`;
-    ctx.fillRect(0, 0, W, H);
-    ctx.fillStyle = '#f44';
-    ctx.font = 'bold 14px monospace';
-    ctx.fillText('ОНО ЧУЕТ ТЕБЯ', W/2 - 65, 30);
-  }
-}
-
-// ─── END SCREEN ───────────────────────────────────────────────────────────────
-function showEndScreen(type) {
-  overlay.style.display = 'flex';
-  overlay.innerHTML = type === 'win'
-    ? `<h1 style="color:#4f4">ТЫ ВЫЖИЛ</h1>
-       <p>Ты выбрался из дома.<br>Позади — тишина.<br><br>
-       <span style="color:#888">Ты оборачиваешься.<br>В окне — что-то движется.</span></p>
-       <div class="sub">[ Enter — играть снова ]</div>`
-    : `<h1>ТЫ МЁРТВ</h1>
-       <p>Оно настигло тебя в темноте.<br><br>
-       <span style="color:#555">Дом снова пуст.</span></p>
-       <div class="sub">[ Enter — попробовать снова ]</div>`;
-}
-
-// ─── LOOP ─────────────────────────────────────────────────────────────────────
-function loop() {
-  update();
-  draw();
-  requestAnimationFrame(loop);
+  renderer.render(scene, camera);
 }
 
 loop();
